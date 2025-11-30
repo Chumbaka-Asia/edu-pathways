@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Our Curriculum</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root { --gap: 20px; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #f4f7f9;
+      color: #111827;
+      margin: 0;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+    }
+
+    h1.title { font-weight: 800; font-size: 2rem; margin: 0 0 10px 0; }
+
+    .pathway-container { display: flex; flex-direction: column; gap: 32px; width: 100%; max-width: 1200px; }
+
+    .level-section { display: flex; flex-direction: column; gap: 16px; }
+
+    .level-label {
+      background: var(--level-color);
+      color: #fff; text-align: center; padding: 18px; border-radius: 14px;
+      font-weight: 700; font-size: 1.2rem; cursor: pointer; position: relative;
+    }
+    .level-label::after { content: '▸'; position: absolute; right: 16px; top: 50%; transform: translateY(-50%); opacity: .9; font-size: 1.1rem; }
+    .level-section.open .level-label::after { content: '▾'; }
+
+    .course-row { /* collapsed by default */ display: none; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap); align-items: start; }
+    .level-section.open .course-row { display: grid; }
+
+    @media (max-width: 1024px) { .course-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 640px)  { .course-row { grid-template-columns: 1fr; } }
+
+    .track-col { display: grid; gap: var(--gap); }
+
+    .course-block {
+      background: var(--level-color); color:#fff; border-radius:12px; padding:20px; width:100%; min-height:100px; box-sizing:border-box;
+      display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; font-weight:600; position:relative;
+      box-shadow:0 3px 6px rgba(0,0,0,.1); transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease, filter .18s ease;
+    }
+    .course-block:hover { transform: translateY(-4px); box-shadow: 0 10px 22px rgba(0,0,0,.1); }
+    .course-block.highlight { box-shadow: 0 0 0 3px rgba(59,130,246,.55), 0 10px 22px rgba(0,0,0,.25); }
+
+    .track-bubble { position:absolute; top:10px; left:10px; background:rgba(0,0,0,.25); color:#fff; font-weight:700; font-size:.8rem; border-radius:999px; padding:4px 10px; text-transform:uppercase; }
+
+    /* Dim everything except the active card when dialog is open */
+    .dim-others .course-block { opacity: 0.35; filter: grayscale(0.6); }
+    .dim-others .course-block.active { opacity: 1; filter: none; }
+
+    /* Suggested-next chips shown in the dialog */
+    .next-chips { margin-top: 10px; margin-bottom: 24px; display: flex; flex-wrap: wrap; gap: 8px; }
+    .next-chip  { border:1px solid rgba(0,0,0,.15); background:#eef2ff; color:#1f2937; border-radius:999px; padding:4px 10px; font-size:12px; font-weight:700; cursor:pointer; }
+    .next-chip:hover { background:#e0e7ff; }
+
+    .chips-title { margin: 6px 0 4px; font-weight: 700; color: #374151; }
+
+    dialog { border:none; border-radius:14px; box-shadow:0 10px 35px rgba(0,0,0,.12); padding:20px; max-width:560px; width:90%; }
+    dialog::backdrop { background: rgba(0,0,0,.22); }
+
+    .visually-hidden { position: absolute !important; left: -9999px !important; }
+
+    /* Hide UI during tests to avoid initial flash */
+    body.testing .pathway-container,
+    body.testing dialog { visibility: hidden !important; }
+  </style>
+</head>
+<body>
+  <h1 class="title">Our Curriculum</h1>
+
+  <div class="pathway-container" id="pathway"></div>
+
+  <dialog id="detailsDialog" aria-modal="true">
+    <h3 id="dTitle"></h3>
+    <p id="dMeta"></p>
+    <p id="dDesc"></p>
+    <div id="dNextTitle" class="chips-title" style="display:none">Suggested Next Course(s):</div>
+    <div id="dNext" class="next-chips"></div>
+    <button id="closeBtn">Close</button>
+  </dialog>
+
+  <pre id="testLog" class="visually-hidden" aria-hidden="true"></pre>
+
+  <script>
+    // ===== Config & Data =====
+    const LEVEL_COLORS = { 1: '#d868a8', 2: '#80b45a', 3: '#4b89da', 4: '#e6914a' };
+    const LEVEL_NAMES  = {
+      1: 'Level 1 – Lower Primary',
+      2: 'Level 2 – Upper Primary',
+      3: 'Level 3 – Lower Secondary',
+      4: 'Level 4 – Upper Secondary'
+    };
+
+    const SUGGESTED_NEXT = {
+      'Blocks 1: Play and Code': ['Blocks 2: Mobile Coding','Electronics 1: Circuits and STEM','Storytelling 1: Digital Animation'],
+      'Blocks 2: Mobile Coding': ['3D Design 1: Build with TinkerCad','Electronics 1: Circuits and STEM','Storytelling 1: Digital Animation'],
+      'Electronics 1: Circuits and STEM': ['Electronics 2: Machines and Robots','Blocks 1: Play and Code','Storytelling 1: Digital Animation'],
+      'Electronics 2: Machines and Robots': ['Blocks 1: Play and Code','Storytelling 1: Digital Animation'],
+      'Storytelling 1: Digital Animation': ['Storytelling 2: Creative Computing'],
+      '3D Design 1: Build with TinkerCad': ['3D Design 2: Modelling with SketchUp','Storytelling 1: Digital Animation','Electronics 1: Circuits and STEM'],
+      'Storytelling 2: Creative Computing': ['Game Dev 1: Mini Games Creation','Electronics 1: Circuits and STEM','3D Design 1: Build with TinkerCad'],
+      'Game Dev 1: Mini Games Creation': ['AI 1: Computational Thinking','Electronics 1: Circuits and STEM'],
+      'Arduino 1: Physical Computing': ['Arduino 2: Human Computer Interaction','AI 1: Computational Thinking'],
+      'Arduino 2: Human Computer Interaction': ['Arduino 3: Machine Learning with Sensors','AI 1: Computational Thinking'],
+      'AI 1: Computational Thinking': ['AI 2: Problem Solving and Algorithm','Electronics 1: Circuits and STEM','Storytelling 1: Digital Animation'],
+      'AI 2: Problem Solving and Algorithm': ['App Dev 1: UI Design & Mobile Games','Arduino 1: Physical Computing'],
+      '3D Design 2: Modelling with SketchUp': ['3D Design 3: Animate with Blender'],
+      'Game Dev 2: Designing for XR': ['Game Dev 3: Level Up with Godot','AI 1: Computational Thinking'],
+      'Arduino 3: Machine Learning with Sensors': ['Arduino 4: Programming with C','AI 1: Computational Thinking'],
+      'Arduino 4: Programming with C': ['IoT Systems 1: Smart Devices with ESP32'],
+      'App Dev 1: UI Design & Mobile Games': ['App Dev 2: APIs and Database Integration'],
+      'App Dev 2: APIs and Database Integration': ['AI 3: Data and Regression'],
+      'AI 3: Data and Regression': ['AI 4: Predictive and Probabilistic Models'],
+      'AI 4: Predictive and Probabilistic Models': ['IoT Systems 1: Smart Devices with ESP32'],
+      'IoT Systems 1: Smart Devices with ESP32': ['IoT Systems 2: Edge Computing with AI'],
+      'IoT Systems 2: Edge Computing with AI': [],
+      '3D Design 3: Animate with Blender': [],
+      'Game Dev 3: Level Up with Godot': []
+    };
+
+    const COURSES = [
+      // Level 1 (6)
+      {title: 'Storytelling 1: Digital Animation', track: 'Designer', focus: 'Frame-by-frame digital animation', prereq: '', level: 1},
+      {title: '3D Design 1: Build with TinkerCad', track: 'Designer', focus: '3D modelling and simulation', prereq: 'Blocks 2: Mobile Coding', level: 1},
+      {title: 'Blocks 1: Play and Code', track: 'Coder', focus: 'Learn coding through games and unplugged activities', prereq: '', level: 1},
+      {title: 'Blocks 2: Mobile Coding', track: 'Coder', focus: 'Interactive coding using visual blocks with OctoStudio', prereq: 'Blocks 1: Play and Code', level: 1},
+      {title: 'Electronics 1: Circuits and STEM', track: 'Maker', focus: 'Basic electronics and STEM concept', prereq: '', level: 1},
+      {title: 'Electronics 2: Machines and Robots', track: 'Maker', focus: 'Build mechanical systems using motors and gears', prereq: 'Electronics 1: Circuits and STEM', level: 1},
+
+      // Level 2 (6)
+      {title: 'Storytelling 2: Creative Computing', track: 'Designer', focus: 'Animation, storytelling, and music projects', prereq: 'Blocks 2: Mobile Coding, Storytelling 1: Digital Animation', level: 2},
+      {title: 'Game Dev 1: Mini Games Creation', track: 'Designer', focus: 'Build interactive 2D games', prereq: 'Storytelling 2: Creative Computing', level: 2},
+      {title: 'AI 1: Computational Thinking', track: 'Coder', focus: 'Explore coding concepts using Python', prereq: 'Game Dev 1: Mini Games Creation', level: 2},
+      {title: 'AI 2: Problem Solving and Algorithm', track: 'Coder', focus: 'Python programming for problem solving', prereq: 'AI 1: Computational Thinking', level: 2},
+      {title: 'Arduino 1: Physical Computing', track: 'Maker', focus: 'Arduino projects with virtual integration', prereq: 'Electronics 2: Machines and Robots, Game Dev 1: Mini Games Creation', level: 2},
+      {title: 'Arduino 2: Human Computer Interaction', track: 'Maker', focus: 'Smart systems using sensors and AI inputs', prereq: 'Arduino 1: Physical Computing', level: 2},
+
+      // Level 3 (6)
+      {title: '3D Design 2: Modelling with SketchUp', track: 'Designer', focus: 'Advanced modeling and spatial design', prereq: '3D Design 1: Build with TinkerCad', level: 3},
+      {title: 'Game Dev 2: Designing for XR', track: 'Designer', focus: 'Immerisive experiences for virtual and augmented reality', prereq: 'Game Dev 1: Mini Games Creation, 3D Design 1: Build with TinkerCad', level: 3},
+      {title: 'App Dev 1: UI Design & Mobile Games', track: 'Coder', focus: 'Mobile game creation with UI design', prereq: 'AI 2: Problem Solving and Algorithm', level: 3},
+      {title: 'App Dev 2: APIs and Database Integration', track: 'Coder', focus: 'Connect apps to real-time data and API services', prereq: 'App Dev 1: UI Design & Mobile Games', level: 3},
+      {title: 'Arduino 3: Machine Learning with Sensors', track: 'Maker', focus: 'Collect data and apply ML models with hardware', prereq: 'Arduino 2: Human Computer Interaction', level: 3},
+      {title: 'Arduino 4: Programming with C', track: 'Maker', focus: 'C programming for Arduino', prereq: 'Arduino 3: Machine Learning with Sensors', level: 3},
+
+      // Level 4 (6)
+      {title: '3D Design 3: Animate with Blender', track: 'Designer', focus: 'Animate 3D scenes and characters', prereq: '3D Design 2: Modelling with SketchUp', level: 4},
+      {title: 'Game Dev 3: Level Up with Godot', track: 'Designer', focus: 'Build cross-platform 2D games and applications', prereq: 'Game Dev 2: Designing for XR', level: 4},
+      {title: 'AI 3: Data and Regression', track: 'Coder', focus: 'Data science life cycle and regression', prereq: 'App Dev 2: APIs and Database Integration', level: 4},
+      {title: 'AI 4: Predictive and Probabilistic Models', track: 'Coder', focus: 'Supervised, Unsupervised and Probabilistic AI', prereq: 'AI 3: Data and Regression', level: 4},
+      {title: 'IoT Systems 1: Smart Devices with ESP32', track: 'Maker', focus: 'Wireless and remote smart device control', prereq: 'Arduino 4: Programming with C, App Dev 1: UI Design & Mobile Games', level: 4},
+      {title: 'IoT Systems 2: Edge Computing with AI', track: 'Maker', focus: 'Train and deploy ML models on-device', prereq: 'AI 4: Predictive and Probabilistic Models, IoT Systems 1: Smart Devices with ESP32', level: 4}
+    ];
+
+    // Quick lookup for course objects by title
+    const COURSE_INDEX = Object.fromEntries(COURSES.map(c => [c.title, c]));
+
+    // ===== Render =====
+    const container = document.getElementById('pathway');
+
+    const grouped = COURSES.reduce((acc, c) => { (acc[c.level] ||= []).push(c); return acc; }, {});
+
+    Object.keys(grouped).sort((a,b) => a-b).forEach(level => {
+      const section = document.createElement('div');
+      section.className = 'level-section';
+      section.style.setProperty('--level-color', LEVEL_COLORS[level]);
+
+      const label = document.createElement('div');
+      label.className = 'level-label';
+      label.textContent = LEVEL_NAMES[level] || `Level ${level}`;
+      label.setAttribute('role','button');
+      label.setAttribute('aria-expanded','false');
+      label.tabIndex = 0;
+      section.appendChild(label);
+
+      const row = document.createElement('div');
+      row.className = 'course-row';
+
+      // Group by track to keep fixed columns (Designer, Coder, Maker)
+      const byTrack = { Designer: [], Coder: [], Maker: [] };
+      grouped[level].forEach(c => { if (byTrack[c.track]) byTrack[c.track].push(c); });
+
+      ['Designer','Coder','Maker'].forEach(trackName => {
+        const col = document.createElement('div');
+        col.className = 'track-col';
+        (byTrack[trackName] || []).forEach(c => {
+          const card = document.createElement('div');
+          card.className = 'course-block';
+          card.style.setProperty('--level-color', LEVEL_COLORS[level]);
+
+          const bubble = document.createElement('div');
+          bubble.className = 'track-bubble';
+          bubble.textContent = c.track;
+          card.appendChild(bubble);
+
+          const title = document.createElement('div');
+          title.textContent = c.title;
+          card.appendChild(title);
+          card.dataset.title = c.title; // for lookups
+
+          card.addEventListener('click', () => showDetails(c));
+          col.appendChild(card);
+        });
+        row.appendChild(col);
+      });
+
+      section.appendChild(row);
+      container.appendChild(section);
+
+      function toggle() {
+        const isOpen = section.classList.toggle('open');
+        label.setAttribute('aria-expanded', String(isOpen));
+      }
+      label.addEventListener('click', toggle);
+      label.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    });
+
+    // Build a fast index of titles -> elements for chip navigation
+    const TITLE_INDEX = {};
+    document.querySelectorAll('.course-block').forEach(card => {
+      const section = card.closest('.level-section');
+      const label = section.querySelector('.level-label');
+      const title = card.dataset.title || card.textContent.trim();
+      TITLE_INDEX[title] = { card, section, label };
+    });
+
+    function openSection(section, label) {
+      if (!section.classList.contains('open')) {
+        section.classList.add('open');
+        if (label) label.setAttribute('aria-expanded', 'true');
+      }
+    }
+    function goToCourseByTitle(title) {
+      const entry = TITLE_INDEX[title];
+      if (!entry) return null;
+      openSection(entry.section, entry.label);
+      entry.card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      entry.card.classList.add('highlight');
+      setTimeout(() => entry.card.classList.remove('highlight'), 1200);
+      try { entry.card.focus(); } catch {}
+      return entry;
+    }
+
+    // Helper: set active card + dim others
+    function setActiveCourse(title){
+      // clear any previous active state
+      document.querySelectorAll('.course-block.active').forEach(el => el.classList.remove('active'));
+      container.classList.add('dim-others');
+      const entry = TITLE_INDEX[title];
+      if (entry) { entry.card.classList.add('active'); }
+    }
+    function clearActiveCourse(){
+      container.classList.remove('dim-others');
+      document.querySelectorAll('.course-block.active').forEach(el => el.classList.remove('active'));
+    }
+
+    // Navigate to a course and show its dialog
+    function openAndShowCourse(title) {
+      const entry = goToCourseByTitle(title);
+      const course = COURSE_INDEX[title];
+      if (!entry || !course) return;
+      // allow scroll animation to start before opening dialog
+      setTimeout(() => { showDetails(course); }, 300);
+    }
+
+    // ===== Dialog =====
+    const dialog = document.getElementById('detailsDialog');
+    const dTitle = document.getElementById('dTitle');
+    const dMeta  = document.getElementById('dMeta');
+    const dDesc  = document.getElementById('dDesc');
+    const dNext  = document.getElementById('dNext');
+    const dNextTitle = document.getElementById('dNextTitle');
+    const closeBtn = document.getElementById('closeBtn');
+
+    function showDetails(course) {
+      // set active & dim others
+      setActiveCourse(course.title);
+
+      dTitle.textContent = course.title;
+      dMeta.textContent  = `Level ${course.level} · ${course.track}`;
+      dDesc.innerHTML    = `<strong>Focus:</strong> ${course.focus || 'N/A'}<br><strong>Prerequisite(s):</strong> ${course.prereq || 'None'}`;
+
+      // Build next-course chips in dialog
+      dNext.innerHTML = '';
+      const nextList = (SUGGESTED_NEXT[course.title] || []).filter(Boolean);
+      if (nextList.length) {
+        nextList.forEach(n => {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'next-chip';
+          chip.textContent = n;
+          chip.setAttribute('aria-label', `Go to ${n}`);
+          chip.addEventListener('click', () => { dialog.close(); openAndShowCourse(n); });
+          dNext.appendChild(chip);
+        });
+        dNext.style.display = 'flex';
+      if (dNextTitle) { dNextTitle.style.display = 'block'; dNextTitle.textContent = 'Suggested Next Course(s):'; }
+    } else {
+      dNext.style.display = 'none';
+      if (dNextTitle) { dNextTitle.style.display = 'none'; }
+    }
+
+      dialog.showModal();
+    }
+
+    // Clear dim/active whenever the dialog closes (button, ESC, or backdrop)
+    dialog.addEventListener('close', clearActiveCourse);
+    closeBtn.addEventListener('click', () => dialog.close());
+
+    // ===== Smoke Tests (console) =====
+    (function runTests(){
+      // Hide UI while tests run to prevent any visible flash/glitch
+      document.body.classList.add('testing');
+      const logEl = document.getElementById('testLog');
+      const lines = [];
+      function log(msg){ lines.push(String(msg)); }
+      function flush(){ const joined = lines.join('\n'); logEl.textContent = joined; console.log(joined); }
+
+      // ensure test side-effects don't alter initial UI state
+      function collapseAllLevels(){
+        document.querySelectorAll('.level-section').forEach(s => {
+          s.classList.remove('open');
+          const lbl = s.querySelector('.level-label');
+          if (lbl) lbl.setAttribute('aria-expanded','false');
+        });
+      }
+
+      try {
+        // 1) Correct levels rendered
+        const sections = Array.from(document.querySelectorAll('.level-section'));
+        console.assert(sections.length === 4, 'Should render 4 levels');
+        log(`Levels rendered: ${sections.length}`);
+
+        // 2) Collapsed by default
+        const anyOpen = sections.some(s => s.classList.contains('open'));
+        console.assert(!anyOpen, 'Levels should be collapsed by default');
+        log('Collapsed by default: OK');
+
+        // 3) Total course count = 24
+        const total = Array.from(document.querySelectorAll('.course-block')).length;
+        console.assert(total === 24, `Expected 24 courses, got ${total}`);
+        log(`Total courses: ${total}`);
+
+        // 4) Track columns exist per level (3 cols)
+        const firstRowCols = sections[0].querySelectorAll('.track-col').length;
+        console.assert(firstRowCols === 3, `Expected 3 columns per level, got ${firstRowCols}`);
+        log(`Columns per level: ${firstRowCols}`);
+
+        // 5) Open/close toggling works
+        const firstLabel = sections[0].querySelector('.level-label');
+        firstLabel.click();
+        console.assert(sections[0].classList.contains('open'), 'Level should open on click');
+        firstLabel.click();
+        console.assert(!sections[0].classList.contains('open'), 'Level should close on second click');
+        log('Toggle open/close: OK');
+
+        // 6) Dialog shows suggested-next chips and navigation opens section & dialog for target
+        firstLabel.click(); // open level 1
+        const blocksL1 = sections[0].querySelectorAll('.course-block');
+        blocksL1[0].click(); // open dialog for first course
+        const expectedNext = (SUGGESTED_NEXT[blocksL1[0].dataset.title || blocksL1[0].textContent.trim()] || []).length;
+        const chips = document.querySelectorAll('#dNext .next-chip');
+        console.assert(chips.length === expectedNext, `Dialog chips ${chips.length} should equal mapping ${expectedNext}`);
+        log(`Dialog next chips: ${chips.length}/${expectedNext}`);
+        if (chips.length > 0) {
+          const targetTitle = chips[0].textContent;
+          chips[0].click(); // should close dialog, open target level, and reopen dialog for target
+          setTimeout(() => {
+            const entry = TITLE_INDEX[targetTitle];
+            console.assert(entry && entry.section.classList.contains('open'), 'Target section should be open after navigation');
+            console.assert(dialog.open === true && document.getElementById('dTitle').textContent === targetTitle, 'Dialog should reopen showing target course');
+            log('Chip navigation opens section and shows dialog: OK');
+          }, 400);
+        }
+        // close at end
+        setTimeout(() => dialog.close(), 600);
+
+        // 7) goToCourseByTitle should open deep-level course and set aria-expanded
+        const deepTitle = 'IoT Systems 2: Edge Computing with AI';
+        const entry7 = goToCourseByTitle(deepTitle);
+        console.assert(entry7 && entry7.section.querySelector('.level-label').getAttribute('aria-expanded') === 'true', 'aria-expanded should be true after navigation');
+        log('Deep navigation aria-expanded: OK');
+
+        // 8) TITLE_INDEX should include all 24 courses
+        const idxCount = Object.keys(TITLE_INDEX).length;
+        console.assert(idxCount === 24, `TITLE_INDEX expected 24, got ${idxCount}`);
+        log(`TITLE_INDEX size: ${idxCount}`);
+
+        // 9) When dialog is open, others are dimmed and active card is not
+        const someTitle = 'Blocks 1: Play and Code';
+        openAndShowCourse(someTitle);
+        setTimeout(() => {
+          console.assert(container.classList.contains('dim-others'), 'Container should have dim-others class while dialog open');
+          const active = document.querySelector('.course-block.active');
+          console.assert(active && (active.dataset.title === someTitle), 'Active card should be marked for selected course');
+          log('Dimming behavior: OK');
+          dialog.close();
+        }, 350);
+      } catch (e) {
+        console.error('Test error:', e);
+        log('Test error: ' + (e && e.message ? e.message : e));
+      } finally {
+        flush();
+        setTimeout(() => {
+          // ensure UI reset
+          document.querySelectorAll('.level-section').forEach(s => {
+            s.classList.remove('open');
+            const lbl = s.querySelector('.level-label');
+            if (lbl) lbl.setAttribute('aria-expanded','false');
+          });
+          container.classList.remove('dim-others');
+          document.querySelectorAll('.course-block.active').forEach(el => el.classList.remove('active'));
+        }, 700);
+        // Reveal UI just after cleanup so nothing appears to auto-open
+        setTimeout(() => document.body.classList.remove('testing'), 750);
+      }
+    })();
+  </script>
+</body>
+</html>
